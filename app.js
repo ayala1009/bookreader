@@ -5,10 +5,14 @@ let operation = 0;
 let photoURL = null;
 let pageURLs = [];
 let drawnPages = [];
+let candidatePages = [];
 const detector = new StabilityDetector($('video'), {
   onStatus: text => { $('stability-status').textContent = $('auto').checked ? text : AUTO_STATUS.off; },
   onStable: pages => $('auto').checked ? takePhoto(true, pages) : false,
-  onPages: pages => { drawnPages=pages; drawOverlay(); },
+  onPages: (pages,diagnostics=[]) => {
+    drawnPages=pages;candidatePages=diagnostics;drawOverlay();
+    $('page-debug').textContent=diagnostics.map((d,i)=>`候选 ${i+1}：${d.reason}`).join('\n')||'尚未检测到页面候选';
+  },
   onError: error => { $('stability-status').textContent='书页检测不可用，自动拍摄已暂停'; $('cv-status').textContent=error.message; $('retry-cv').hidden=false; message(error.message, true); }
 });
 window.addEventListener('bookreader:cv-status',event=>{
@@ -31,6 +35,13 @@ function drawOverlay() {
   const scale=Math.min(vb.width/video.videoWidth,vb.height/video.videoHeight);
   const width=video.videoWidth*scale,height=video.videoHeight*scale;
   const ox=vb.left-box.left+(vb.width-width)/2,oy=vb.top-box.top+(vb.height-height)/2;
+  ctx.strokeStyle='#ffc46b';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+  for(const [i,candidate] of candidatePages.entries()) {
+    if(!candidate.points.length)continue;
+    ctx.beginPath();candidate.points.forEach((p,j)=>ctx[j?'lineTo':'moveTo'](ox+p.x*width,oy+p.y*height));ctx.closePath();ctx.stroke();
+    ctx.fillStyle='#ffc46b';ctx.font='14px sans-serif';ctx.fillText(`候选 ${i+1}`,ox+candidate.points[0].x*width+4,oy+candidate.points[0].y*height-4);
+  }
+  ctx.setLineDash([]);
   ctx.strokeStyle='#b5ff91';ctx.fillStyle='#b5ff91';ctx.lineWidth=3;ctx.font='bold 16px sans-serif';
   for(const page of drawnPages) {
     ctx.beginPath();page.points.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](ox+p.x*width,oy+p.y*height));ctx.closePath();ctx.stroke();

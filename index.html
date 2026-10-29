@@ -8,10 +8,10 @@
   <link rel="stylesheet" href="styles.css">
   <script src="camera.js" defer></script>
   <script src="opencv-loader.js?v=local-cv-1" defer></script>
-  <script src="page-detector.js?v=local-cv-1" defer></script>
+  <script src="page-detector.js?v=single-page-2" defer></script>
   <script src="page-output.js?v=pages-1" defer></script>
-  <script src="stability.js?v=pages-1" defer></script>
-  <script src="app.js?v=local-cv-1" defer></script>
+  <script src="stability.js?v=single-page-2" defer></script>
+  <script src="app.js?v=single-page-2" defer></script>
 </head>
 <body>
   <main>
@@ -30,6 +30,7 @@
       <p id="stability-status" role="status">自动拍摄已关闭</p>
       <p id="cv-status" role="status">OpenCV 尚未加载</p>
       <button id="retry-cv" class="secondary" hidden>重试加载</button>
+      <details><summary>检测调试：橙色虚线为候选，绿色为有效页面</summary><pre id="page-debug" style="white-space:pre-wrap;overflow-wrap:anywhere">尚未检测到页面候选</pre></details>
       <p class="hint">确认页面边界与纹理并稳定约 1.5 秒后自动拍摄。传统视觉可能误判印刷物，不识别手部或翻页；透视校正不解决弯曲书页。</p>
       <div class="actions">
         <button id="start" class="primary">开启相机</button>

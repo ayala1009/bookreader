@@ -21,7 +21,7 @@ function pageWarp(cv, src, points, width, height) {
 }
 
 class BookPageDetector {
-  constructor() { this.canvas = document.createElement('canvas'); }
+  constructor() { this.canvas = document.createElement('canvas'); this.diagnostics=[]; }
   async ready() { this.cv = await loadBookCV(); }
   detect(source) {
     const cv = this.cv;
@@ -30,6 +30,10 @@ class BookPageDetector {
     const scale = PAGE_CONFIG.maxSide / Math.max(w,h);
     this.canvas.width = Math.round(w*scale); this.canvas.height = Math.round(h*scale);
     this.canvas.getContext('2d').drawImage(source,0,0,this.canvas.width,this.canvas.height);
+    this.diagnostics=[];
+    const report=(points,reason,valid=false)=>{
+      if(this.diagnostics.length<16)this.diagnostics.push({points:points.map(p=>({x:p.x/this.canvas.width,y:p.y/this.canvas.height})),reason,valid});
+    };
     const objects=[];
     const own=x=>(objects.push(x),x);
     try {
@@ -47,13 +51,23 @@ class BookPageDetector {
         try {
           const area=Math.abs(cv.contourArea(contour));
           if(area < gray.cols*gray.rows*PAGE_CONFIG.minArea || area>gray.cols*gray.rows*.93) continue;
-          cv.approxPolyDP(contour,approx,.025*cv.arcLength(contour,true),true);
-          if(approx.rows!==4 || !cv.isContourConvex(approx)) continue;
+          const perimeter=cv.arcLength(contour,true);
+          // Mildly curved page edges need not simplify to four corners at one epsilon.
+          for(const epsilon of [.015,.025,.04,.055]) {
+            cv.approxPolyDP(contour,approx,epsilon*perimeter,true);
+            if(approx.rows===4&&cv.isContourConvex(approx))break;
+          }
+          if(approx.rows!==4 || !cv.isContourConvex(approx)) {
+            const r=cv.boundingRect(contour);
+            report([{x:r.x,y:r.y},{x:r.x+r.width,y:r.y},{x:r.x+r.width,y:r.y+r.height},{x:r.x,y:r.y+r.height}], '轮廓弯曲或遮挡过大，无法可靠拟合四角');continue;
+          }
           const points=orderPage(Array.from({length:4},(_,j)=>({x:approx.data32S[j*2],y:approx.data32S[j*2+1]})));
-          if(points.some(p=>p.x<4||p.y<4||p.x>gray.cols-5||p.y>gray.rows-5)) continue;
+          const fit=area/Math.abs(cv.contourArea(approx));
+          if(fit<.78||fit>1.22) {report(points,'轮廓与四角拟合偏差过大');continue;}
+          if(points.some(p=>p.x<4||p.y<4||p.x>gray.cols-5||p.y>gray.rows-5)) {report(points,'页面触及画面边缘，可能不完整');continue;}
           const pw=(pageDistance(points[0],points[1])+pageDistance(points[3],points[2]))/2;
           const ph=(pageDistance(points[0],points[3])+pageDistance(points[1],points[2]))/2;
-          if(pw/ph<.4 || pw/ph>2.4) continue;
+          if(pw/ph<.4 || pw/ph>2.4) {report(points,'页面比例超出支持范围');continue;}
           quads.push({points,area,ratio:pw/ph});
         } finally { contour.delete(); approx.delete(); }
       }
@@ -64,6 +78,7 @@ class BookPageDetector {
         const warped=pageWarp(cv,gray,quad.points,240,320);
         try {
           const full=warped.image;
+          let splitAccepted=false;
           if(quad.ratio>1.12) {
             const seam=this.findSeam(full);
             if(seam!==null) {
@@ -72,12 +87,19 @@ class BookPageDetector {
               const top=lerp(p[0],p[1]), bottom=lerp(p[3],p[2]);
               for(const [label,points] of [['左页',[p[0],top,bottom,p[3]]],['右页',[top,p[1],p[2],bottom]]]) {
                 const part=pageWarp(cv,gray,points,160,220);
-                try { const evidence=this.texture(part.image); if(evidence.valid) candidates.push({points,label,evidence,seam:true}); }
+                try {
+                  const evidence=this.texture(part.image);
+                  report(points,label+'：'+evidence.reason,evidence.valid);
+                  if(evidence.valid) {candidates.push({points,label,evidence,seam:true});splitAccepted=true;}
+                }
                 finally { part.image.delete(); }
               }
             }
-          } else {
+          }
+          // A wide single page is valid without a seam or a companion page.
+          if(!splitAccepted) {
             const evidence=this.texture(full);
+            report(quad.points,'单页：'+evidence.reason,evidence.valid);
             if(evidence.valid) candidates.push({...quad,label:'单页',evidence});
           }
         } finally { warped.image.delete(); }
@@ -102,6 +124,8 @@ class BookPageDetector {
         }
       }
       if(accepted.length===2) { accepted[0].label='左页'; accepted[1].label='右页'; }
+      else if(accepted.length===1)accepted[0].label='单页';
+      if(!this.diagnostics.length)this.diagnostics.push({points:[],valid:false,reason:'未找到完整页面轮廓：请增加页面占比、调整光线并保留四周边距'});
       return accepted.map(c=>({label:c.label, points:c.points.map(p=>({x:p.x/gray.cols,y:p.y/gray.rows})),
         signature:c.evidence.signature, evidence:{contour:true,texture:true,seam:!!c.seam}, confidence:'heuristic'}));
     } finally { objects.reverse().forEach(x=>x.delete()); }
@@ -129,7 +153,12 @@ class BookPageDetector {
         for(let x=Math.floor((.1+gx*.8/12)*w);x<(.1+(gx+1)*.8/12)*w;x++) {sum+=d[y*w+x];count++;}
       signature.push(sum/Math.max(count,1));
     }
-    return {valid:activeBands>=5&&dark/total>.025&&dark/total<.38&&transitions/total>.025,signature};
+    const reasons=[];
+    if(activeBands<5)reasons.push(`文字行状纹理不足（${activeBands}/5 行）`);
+    if(dark/total<=.025)reasons.push('页内纹理过少或过亮');
+    if(dark/total>=.38)reasons.push('暗色占比过高，可能是阴影或遮挡');
+    if(transitions/total<=.025)reasons.push('细节边缘不足，可能失焦或为纯色物体');
+    return {valid:!reasons.length,reason:reasons.join('；')||'轮廓与页内纹理通过',signature};
   }
   findSeam(mat) {
     const w=mat.cols,h=mat.rows,d=mat.data; let best=null,score=0;

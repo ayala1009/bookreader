@@ -38,7 +38,7 @@ class StabilityDetector {
       if(generation!==this.generation) return;
       try {
         const pages=this.video.readyState>=2?this.engine.detect(this.video):[];
-        this.pages=pages;this.onPages(pages);
+        this.pages=pages;this.onPages(pages,this.engine.diagnostics);
         const result=this.gate.update(pages,performance.now());this.onStatus(result.status);
         if(result.shoot) {
           const ok=await this.onStable(pages);
