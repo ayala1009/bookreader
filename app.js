@@ -11,7 +11,10 @@ const detector = new StabilityDetector($('video'), {
 function syncDetection() {
   detector.stop();
   if ($('auto').checked && state === 'live' && !document.hidden) detector.start();
-  else $('stability-status').textContent = $('auto').checked ? '等待开启相机' : '自动拍摄已关闭';
+  else updateInactiveStatus();
+}
+function updateInactiveStatus() {
+  $('stability-status').textContent = $('auto').checked ? AUTO_STATUS.idle : AUTO_STATUS.off;
 }
 $('auto').addEventListener('change', syncDetection);
 
@@ -57,6 +60,7 @@ async function start() {
   detector.stop();
   clearPhoto();
   render('starting');
+  updateInactiveStatus();
   message('请允许使用摄像头，优先请求后置摄像头。');
   try {
     await camera.start();
@@ -71,6 +75,7 @@ async function start() {
   } catch (error) {
     if (token !== operation) return;
     render('idle');
+    updateInactiveStatus();
     message(explain(error), true);
   }
 }
@@ -106,6 +111,7 @@ async function takePhoto(automatic = false) {
     $('download').download = `book-page-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
     if (!automatic) camera.stop();
     render(automatic ? 'live' : 'result');
+    if (!automatic) updateInactiveStatus();
     $('resolution').textContent = `照片：${photo.width} × ${photo.height} px`;
     message('完整画面已保存到预览，可下载或重新拍摄。');
     // Integration point: event.detail = { blob, width, height }. No upload is performed.
@@ -125,4 +131,5 @@ window.addEventListener('pagehide', () => {
   else camera.stop();
 });
 render('idle');
+syncDetection();
 if (!window.isSecureContext) message('当前不是安全连接，请使用 HTTPS 页面。手机无法通过电脑的 HTTP 局域网地址开启相机。', true);

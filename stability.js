@@ -1,3 +1,12 @@
+// Shared UI text for every automatic-capture state.
+const AUTO_STATUS = Object.freeze({
+  off: '自动拍摄已关闭',
+  idle: '请先开启相机',
+  moving: '画面移动中',
+  waiting: '等待画面稳定',
+  captured: '已拍摄，请移动或翻页'
+});
+window.AUTO_STATUS = AUTO_STATUS;
 // All tuning parameters live here. Differences are mean grayscale levels (0–255).
 const STABILITY_CONFIG = Object.freeze({ sampleMs: 200, width: 160, height: 120,
   stableMs: 1500, stableThreshold: 3, movementThreshold: 12, maxGapMs: 800 });
@@ -15,7 +24,7 @@ class StabilityDetector {
   start() {
     this.stop();
     const generation = this.generation;
-    this.onStatus('等待稳定');
+    this.onStatus(AUTO_STATUS.waiting);
     const tick = async () => {
       if (generation !== this.generation) return;
       try {
@@ -37,16 +46,16 @@ class StabilityDetector {
             if (this.locked) {
               // Compare with captured scene too, so gradual movement can rearm.
               if (change >= this.config.movementThreshold || (this.reference && StabilityDetector.difference(gray, this.reference) >= this.config.movementThreshold)) {
-                this.locked = false; this.since = null; this.onStatus('画面移动中');
-              } else this.onStatus('已拍摄，请移动或翻页');
+                this.locked = false; this.since = null; this.onStatus(AUTO_STATUS.moving);
+              } else this.onStatus(AUTO_STATUS.captured);
             } else if (change > this.config.stableThreshold) {
-              this.since = null; this.onStatus('画面移动中');
+              this.since = null; this.onStatus(AUTO_STATUS.moving);
             } else {
               this.since ??= now;
-              this.onStatus('等待稳定');
+              this.onStatus(AUTO_STATUS.waiting);
               if (now - this.since >= this.config.stableMs) {
                 this.locked = true; this.reference = gray.slice();
-                this.onStatus('已拍摄，请移动或翻页');
+                this.onStatus(AUTO_STATUS.captured);
                 await this.onStable();
               }
             }
