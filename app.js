@@ -9,9 +9,26 @@ let candidatePages = [];
 const detector = new StabilityDetector($('video'), {
   onStatus: text => { $('stability-status').textContent = $('auto').checked ? text : AUTO_STATUS.off; },
   onStable: pages => $('auto').checked ? takePhoto(true, pages) : false,
-  onPages: (pages,diagnostics=[]) => {
+  onPages: (pages,diagnostics=[],debug={}) => {
     drawnPages=pages;candidatePages=diagnostics;drawOverlay();
-    $('page-debug').textContent=diagnostics.map((d,i)=>`候选 ${i+1}：${d.reason}`).join('\n')||'尚未检测到页面候选';
+    const s=debug.stats;
+    $('debug-summary').textContent=s?`第 ${s.frame} 帧 · ${s.time} · ${s.width} × ${s.height} · 有效 ${pages.length} 页`:'尚未分析视频帧';
+    $('page-debug').textContent=s?[
+      `轮廓总数 ${s.total}（边缘 ${s.edgeContours} / 亮度区域 ${s.regionContours}）`,
+      `面积筛选后 ${s.areaPassed}；太小 ${s.areaSmall}；太大 ${s.areaLarge}；四角拟合与几何通过 ${s.quadPassed}`,
+      ...s.textures.map(t=>`纹理 #${t.id} ${t.label}：行带 ${t.bands}/5，墨迹 ${(t.inkRatio*100).toFixed(2)}%，细节 ${(t.edgeRatio*100).toFixed(2)}%；${t.method}`),
+      ...s.records.map(r=>`轮廓 #${r.id} [${r.path}] 面积 ${(r.areaRatio*100).toFixed(2)}%：${r.reason}`),
+      ...diagnostics.map((d,i)=>`边界候选 ${i+1}：${d.reason}`)
+    ].join('\n'):'尚未检测到页面候选';
+    const thumb=$('debug-frame'),ctx=thumb.getContext('2d');
+    thumb.width=debug.thumbnail?.width||1;thumb.height=debug.thumbnail?.height||1;
+    if(debug.thumbnail) {
+      ctx.drawImage(debug.thumbnail,0,0);ctx.lineWidth=3;
+      for(const d of [...diagnostics.slice(0,24),...pages.map(p=>({...p,valid:true}))]) {
+        if(!d.points.length)continue;ctx.strokeStyle=d.valid?'#70ff70':'#ffb347';ctx.beginPath();
+        d.points.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p.x*thumb.width,p.y*thumb.height));ctx.closePath();ctx.stroke();
+      }
+    }
   },
   onError: error => { $('stability-status').textContent='书页检测不可用，自动拍摄已暂停'; $('cv-status').textContent=error.message; $('retry-cv').hidden=false; message(error.message, true); }
 });

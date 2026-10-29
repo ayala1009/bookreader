@@ -31,6 +31,11 @@ button:disabled { opacity: .5; cursor: wait; }
 .auto-control { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px; }
 .auto-control input { width: 24px; height: 24px; accent-color: #31563e; }
 .viewer { position: relative; }
+.build { color: #31563e; font-size: 13px; font-weight: 700; }
+#detection-debug { border: 2px solid #b6c9a8; border-radius: 10px; padding: 12px; margin: 16px 0; }
+#detection-debug summary { font-weight: 700; cursor: pointer; min-height: 40px; }
+#debug-frame { display: block; width: 100%; max-height: 38svh; object-fit: contain; background: #17271f; }
+#page-debug { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; font-size: 12px; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #page-results { display: grid; gap: 16px; margin-top: 16px; }
 #page-results img { display: block; max-width: 100%; max-height: 60svh; object-fit: contain; margin: 12px auto; }

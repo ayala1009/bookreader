@@ -5,19 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f3ed">
   <title>BookReader · 书页拍摄</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=diag-3">
   <script src="camera.js" defer></script>
   <script src="opencv-loader.js?v=local-cv-1" defer></script>
-  <script src="page-detector.js?v=single-page-2" defer></script>
+  <script src="page-detector.js?v=diag-3" defer></script>
   <script src="page-output.js?v=pages-1" defer></script>
-  <script src="stability.js?v=single-page-2" defer></script>
-  <script src="app.js?v=single-page-2" defer></script>
+  <script src="stability.js?v=diag-3" defer></script>
+  <script src="app.js?v=diag-3" defer></script>
 </head>
 <body>
   <main>
     <header><span class="brand">BOOKREADER <span> / 01</span></span><span class="tag">书页采集</span></header>
     <h1>把这一页，留下来。</h1>
     <p class="intro">将书页完整放入画面，保持光线均匀，轻点拍摄。</p>
+    <p class="build">构建版本：BR-DIAG-3 · 2026-10-29</p>
     <section class="workspace" aria-label="书页拍摄工作区">
       <div class="viewer">
         <video id="video" autoplay muted playsinline aria-label="实时摄像头画面" hidden></video>
@@ -30,7 +31,12 @@
       <p id="stability-status" role="status">自动拍摄已关闭</p>
       <p id="cv-status" role="status">OpenCV 尚未加载</p>
       <button id="retry-cv" class="secondary" hidden>重试加载</button>
-      <details><summary>检测调试：橙色虚线为候选，绿色为有效页面</summary><pre id="page-debug" style="white-space:pre-wrap;overflow-wrap:anywhere">尚未检测到页面候选</pre></details>
+      <details id="detection-debug" open><summary>展开 / 收起检测调试与处理图</summary>
+        <p id="debug-summary">尚未分析视频帧</p>
+        <p class="hint">当前视频帧的闭运算边缘图；橙色为候选，绿色为通过页面。帧号应持续递增。</p>
+        <canvas id="debug-frame" width="1" height="1" aria-label="当前检测帧的处理结果"></canvas>
+        <pre id="page-debug">尚未检测到页面候选</pre>
+      </details>
       <p class="hint">确认页面边界与纹理并稳定约 1.5 秒后自动拍摄。传统视觉可能误判印刷物，不识别手部或翻页；透视校正不解决弯曲书页。</p>
       <div class="actions">
         <button id="start" class="primary">开启相机</button>
