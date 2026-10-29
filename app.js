@@ -9,6 +9,7 @@ let candidatePages = [];
 const detector = new StabilityDetector($('video'), {
   onStatus: text => { $('stability-status').textContent = $('auto').checked ? text : AUTO_STATUS.off; },
   onStable: pages => $('auto').checked ? takePhoto(true, pages) : false,
+  onIdentity: updateIdentity,
   onPages: (pages,diagnostics=[],debug={}) => {
     drawnPages=pages;candidatePages=diagnostics;drawOverlay();
     const s=debug.stats;
@@ -31,6 +32,22 @@ const detector = new StabilityDetector($('video'), {
     }
   },
   onError: error => { $('stability-status').textContent='书页检测不可用，自动拍摄已暂停'; $('cv-status').textContent=error.message; $('retry-cv').hidden=false; message(error.message, true); }
+});
+function updateIdentity(status='等待书页') {
+  const tracker=detector.tracker;
+  $('page-identity').textContent=`页面编号：${tracker.currentIds.map(id=>'P'+id).join(' / ')||'—'} · 采集次数：${tracker.captureCount} · ${status}`;
+}
+window.BookReader=Object.freeze({
+  setHandOccluded(value) {
+    const changed=detector.tracker.setHandOccluded(value);
+    if(changed)detector.gate.reset();
+    $('hand-status').textContent=value?'已收到手部遮挡信号，暂停采集':'遮挡信号已解除，将重新稳定并比较参考页';
+    if(changed)updateIdentity(value?'手部遮挡中，暂停采集':'等待书页');
+  },
+  getReferences:()=>detector.tracker.references.map(ref=>({...ref,content:{...ref.content,ink:ref.content.ink.slice()}}))
+});
+window.addEventListener('bookreader:hand-occlusion',event=>{
+  if(typeof event.detail?.occluded==='boolean')window.BookReader.setHandOccluded(event.detail.occluded);
 });
 window.addEventListener('bookreader:cv-status',event=>{
   $('cv-status').textContent=event.detail;
@@ -95,7 +112,7 @@ function render(next) {
   $('result').hidden = !photoURL;
   $('placeholder').hidden = next !== 'idle';
   $('phase').textContent = { idle: '相机未开启', starting: '等待相机', live: '实时画面', capturing: '正在生成照片', result: '拍摄完成 · 相机已释放' }[next];
-  if (['idle', 'starting'].includes(next)) $('resolution').textContent = '实际分辨率：—';
+  if (['idle', 'starting'].includes(next)) {$('resolution').textContent = '实际分辨率：—';updateIdentity('等待书页');}
 }
 function clearPhoto() {
   pageURLs.forEach(url=>URL.revokeObjectURL(url));pageURLs=[];
@@ -119,7 +136,6 @@ function explain(error) {
 async function start() {
   const token = ++operation;
   detector.stop();
-  clearPhoto();
   render('starting');
   updateInactiveStatus();
   message('请允许使用摄像头，优先请求后置摄像头。');
@@ -161,52 +177,67 @@ $('capture').addEventListener('click', () => takePhoto(false));
 async function takePhoto(automatic = false, detectedPages = []) {
   if (state !== 'live') return;
   const generation=detector.generation;
+  let contentRevision=detector.tracker.revision;
   if(automatic) {
+    if(detector.tracker.handOccluded)return false;
     // Validate the current frame again before capturing, rather than trusting an old overlay.
-    const current=detector.engine.detect($('video'));
+    const current=samplePageContents(detector.engine,detector.engine.detect($('video')));
     const delta=PageStabilityGate.delta(current,detectedPages);
     if(!current.length||delta.boundary>PAGE_CONFIG.boundaryTolerance||delta.texture>PAGE_CONFIG.textureTolerance) {
-      detector.gate.since=null;detector.gate.previous=null;
+      detector.gate.reset();detector.tracker.pause();
       $('stability-status').textContent=AUTO_STATUS.invalid;return false;
+    }
+    if(detector.tracker.match(current).every(match=>match.same)) {
+      detector.tracker.observe(current,performance.now(),true);
+      updateIdentity('当前页已采集');return false;
     }
     detectedPages=current;
   } else if(detector.engine.cv) {
-    try {detectedPages=detector.engine.detect($('video'));}
+    try {detectedPages=samplePageContents(detector.engine,detector.engine.detect($('video')));}
     catch(error) {message('页面检测失败，将只保存手动拍摄原图：'+error.message,true);detectedPages=[];}
   }
   const token = ++operation;
   if (!automatic) detector.stop();
+  contentRevision=detector.tracker.revision;
   render('capturing');
   try {
     const photo = await camera.capture();
     if (token !== operation) return;
-    if(automatic && generation!==detector.generation) {render('live');return false;}
+    if(automatic && generation!==detector.generation) {render('live');syncDetection();return false;}
+    if(automatic&&(detector.tracker.handOccluded||contentRevision!==detector.tracker.revision)){render('live');syncDetection();return false;}
     const pages=detectedPages.length ? await exportBookPages(photo,detectedPages,detector.engine.cv) : [];
     if(token!==operation)return false;
-    if(automatic&&generation!==detector.generation){render('live');return false;}
+    if(automatic&&generation!==detector.generation){render('live');syncDetection();return false;}
+    if(automatic&&(detector.tracker.handOccluded||contentRevision!==detector.tracker.revision)){render('live');syncDetection();return false;}
+    const identity=pages.length?detector.tracker.commit(detectedPages,pages):null;
+    pages.forEach((page,i)=>{page.pageId=identity.ids[i];});
     clearPhoto();
     photoURL = URL.createObjectURL(photo.blob);
     $('result').src = $('download').href = photoURL;
     $('download').download = `book-page-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
-    const metadata={version:1,coordinateSpace:'original-image-pixels',pointOrder:'TL,TR,BR,BL',matrixDirection:'original-to-page',
+    const metadata={version:2,captureCount:detector.tracker.captureCount,pageIds:identity?.ids||[],coordinateSpace:'original-image-pixels',pointOrder:'TL,TR,BR,BL',matrixDirection:'original-to-page',
       original:{width:photo.width,height:photo.height},pages:pages.map(({blob,...data})=>data),curvedSurfaceCorrected:false};
     const addLink=(blob,label,name,parent)=>{
       const url=URL.createObjectURL(blob);pageURLs.push(url);
       const link=document.createElement('a');link.className='button secondary';link.href=url;link.download=name;link.textContent=label;parent.append(link);return url;
     };
     for(const [i,page] of pages.entries()) {
-      const section=document.createElement('section'),title=document.createElement('h2');title.textContent=page.label;
+      const section=document.createElement('section'),title=document.createElement('h2');title.textContent=`${page.label} · P${page.pageId}`;
       const img=document.createElement('img');img.alt=page.label+'透视校正结果';section.append(title,img);
       img.src=addLink(page.blob,'下载'+page.label,`page-${i+1}.jpg`,section);$('page-results').append(section);
     }
     addLink(new Blob([JSON.stringify(metadata,null,2)],{type:'application/json'}),'下载坐标与转换矩阵','book-pages.json',$('page-results'));
-    if (!automatic) camera.stop();
-    render(automatic ? 'live' : 'result');
-    if (!automatic) updateInactiveStatus();
+    render('live');
+    if (!automatic) syncDetection();
+    updateIdentity(identity?.updated.length?'新页面已采集':identity?'当前页已采集':'等待书页');
     $('resolution').textContent = `照片：${photo.width} × ${photo.height} px`;
     message(pages.length?'原图及独立页面已保存，可分别下载。透视校正不包含曲面校正。':'未确认书页，仅保存手动拍摄原图。');
     // Integration point: event.detail = { blob, width, height }. No upload is performed.
     window.dispatchEvent(new CustomEvent('bookreader:captured', { detail: {...photo,pages,metadata} }));
+    for(const reference of identity?.updated||[])window.dispatchEvent(new CustomEvent('bookreader:page-updated',{
+      detail:{pageId:reference.id,referenceImage:reference.referenceImage,label:reference.label,points:reference.points,matrix:reference.matrix,
+        width:reference.width,height:reference.height,captureCount:identity.captureCount,automatic}
+    }));
     return true;
   } catch (error) {
     if (token !== operation) return;

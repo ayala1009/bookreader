@@ -7,7 +7,8 @@ class PageStabilityGate {
     if(!a||!b||a.length!==b.length) return {boundary:Infinity,texture:Infinity};
     let boundary=0,sum=0,n=0;
     a.forEach((p,i)=>{p.points.forEach((v,j)=>{boundary=Math.max(boundary,pageDistance(v,b[i].points[j]));});
-      p.signature.forEach((v,j)=>{sum+=Math.abs(v-b[i].signature[j]);n++;});});
+      if(p.content&&b[i].content){sum+=comparePageContent(p.content,b[i].content).distance*20;n++;}
+      else p.signature.forEach((v,j)=>{sum+=Math.abs(v-b[i].signature[j]);n++;});});
     return {boundary,texture:sum/Math.max(1,n)};
   }
   update(pages,now) {
@@ -27,9 +28,10 @@ class PageStabilityGate {
   commit(pages) {this.captured=pages;this.since=null;this.anchor=null;}
 }
 class StabilityDetector {
-  constructor(video,{onStatus,onStable,onError,onPages=()=>{}}) {
-    Object.assign(this,{video,onStatus,onStable,onError,onPages});
+  constructor(video,{onStatus,onStable,onError,onPages=()=>{},onIdentity=()=>{}}) {
+    Object.assign(this,{video,onStatus,onStable,onError,onPages,onIdentity});
     this.engine=new BookPageDetector();this.gate=new PageStabilityGate();this.generation=0;this.pages=[];
+    this.tracker=new PageContentTracker();
   }
   start() {
     this.stop();const generation=this.generation;
@@ -37,20 +39,25 @@ class StabilityDetector {
     const tick=async()=>{
       if(generation!==this.generation) return;
       try {
-        const pages=this.video.readyState>=2?this.engine.detect(this.video):[];
+        const detected=this.video.readyState>=2?this.engine.detect(this.video):[];
+        const pages=samplePageContents(this.engine,detected);
         this.pages=pages;this.onPages(pages,this.engine.diagnostics,{stats:this.engine.stats,thumbnail:this.engine.debugCanvas});
-        const result=this.gate.update(pages,performance.now());this.onStatus(result.status);
-        if(result.shoot) {
+        const now=performance.now();
+        if(this.tracker.handOccluded)this.gate.reset();
+        const result=this.gate.update(pages,now);
+        const identity=this.tracker.observe(pages,now,!!result.shoot);
+        this.onStatus(identity.status);this.onIdentity(identity.status);
+        if(identity.capture) {
           const ok=await this.onStable(pages);
           if(generation!==this.generation)return;
-          if(ok) {this.gate.commit(pages);this.onStatus(AUTO_STATUS.captured);}
+          if(ok) {this.onStatus('新页面已采集');this.onIdentity('新页面已采集');}
         }
       } catch(error) {this.stop();this.onError(error);return;}
       if(generation===this.generation)this.timer=setTimeout(tick,PAGE_CONFIG.interval);
     };
     this.engine.ready().then(()=>{if(generation===this.generation)tick();}).catch(error=>{if(generation===this.generation){this.stop();this.onError(error);}});
   }
-  stop() {this.generation++;clearTimeout(this.timer);this.pages=[];this.gate.reset();this.onPages([]);}
+  stop() {this.generation++;clearTimeout(this.timer);this.pages=[];this.gate.reset();this.tracker.pause();this.onPages([]);}
 }
 window.StabilityDetector=StabilityDetector;
 window.PageStabilityGate=PageStabilityGate;

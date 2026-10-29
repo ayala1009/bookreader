@@ -10,15 +10,16 @@
   <script src="opencv-loader.js?v=local-cv-1" defer></script>
   <script src="page-detector.js?v=diag-3" defer></script>
   <script src="page-output.js?v=pages-1" defer></script>
-  <script src="stability.js?v=diag-3" defer></script>
-  <script src="app.js?v=diag-3" defer></script>
+  <script src="page-content.js?v=content-4" defer></script>
+  <script src="stability.js?v=content-4" defer></script>
+  <script src="app.js?v=content-4" defer></script>
 </head>
 <body>
   <main>
     <header><span class="brand">BOOKREADER <span> / 01</span></span><span class="tag">书页采集</span></header>
     <h1>把这一页，留下来。</h1>
     <p class="intro">将书页完整放入画面，保持光线均匀，轻点拍摄。</p>
-    <p class="build">构建版本：BR-DIAG-3 · 2026-10-29</p>
+    <p class="build">构建版本：BR-CONTENT-4 · 2026-10-29</p>
     <section class="workspace" aria-label="书页拍摄工作区">
       <div class="viewer">
         <video id="video" autoplay muted playsinline aria-label="实时摄像头画面" hidden></video>
@@ -29,6 +30,8 @@
       <p id="message" role="status" aria-live="polite">照片仅保留在当前页面，不会自动上传。</p>
       <label class="auto-control"><input id="auto" type="checkbox"> 自动拍摄</label>
       <p id="stability-status" role="status">自动拍摄已关闭</p>
+      <p id="page-identity" role="status">页面编号：— · 采集次数：0 · 等待书页</p>
+      <p id="hand-status" class="hint">手部遮挡输入尚未接入；当前不能可靠排除所有手部误触发。</p>
       <p id="cv-status" role="status">OpenCV 尚未加载</p>
       <button id="retry-cv" class="secondary" hidden>重试加载</button>
       <details id="detection-debug" open><summary>展开 / 收起检测调试与处理图</summary>
