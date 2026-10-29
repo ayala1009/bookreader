@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f3ed">
+  <title>BookReader · 书页拍摄</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="camera.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><span class="brand">BOOKREADER <span> / 01</span></span><span class="tag">书页采集</span></header>
+    <h1>把这一页，留下来。</h1>
+    <p class="intro">将书页完整放入画面，保持光线均匀，轻点拍摄。</p>
+    <section class="workspace" aria-label="书页拍摄工作区">
+      <div class="viewer">
+        <video id="video" autoplay muted playsinline aria-label="实时摄像头画面" hidden></video>
+        <div id="placeholder"><span class="book-icon" aria-hidden="true">▤</span><h2>准备好你的书页</h2><p>开启相机后，这里将显示实时画面</p></div>
+        <img id="result" alt="刚刚拍摄的完整书页画面" hidden>
+      </div>
+      <div class="details"><span id="phase">相机未开启</span><output id="resolution">实际分辨率：—</output></div>
+      <p id="message" role="status" aria-live="polite">照片仅保留在当前页面，不会自动上传。</p>
+      <div class="actions">
+        <button id="start" class="primary">开启相机</button>
+        <button id="capture" class="primary" hidden disabled>拍摄书页</button>
+        <button id="stop" class="secondary" hidden>停止相机</button>
+        <button id="retake" class="secondary" hidden>重新拍摄</button>
+        <a id="download" class="button primary" hidden download>下载图片</a>
+      </div>
+    </section>
+    <footer><span>完整画面 · 原始视频分辨率</span><span>支持竖屏 / 横屏</span></footer>
+    <p class="hint">iPhone 请使用 Safari 打开 HTTPS 页面。下载后可在 Safari 下载列表或“文件”App 中查看；也可长按照片保存。</p>
+  </main>
+</body>
+</html>
