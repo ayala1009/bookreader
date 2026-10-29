@@ -28,6 +28,9 @@ button, .button { flex: 1 1 140px; display: inline-flex; justify-content: center
 .secondary { background: #eaf0e6; color: #31563e; }
 button:disabled { opacity: .5; cursor: wait; }
 :focus-visible { outline: 3px solid #b5803e; outline-offset: 3px; }
+.auto-control { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px; }
+.auto-control input { width: 24px; height: 24px; accent-color: #31563e; }
+#result { margin-top: 16px; border-radius: 12px; background: #17271f; }
 footer { margin-top: 20px; font-size: 12px; color: #657265; flex-wrap: wrap; }
 .hint { font-size: 12px; margin-top: 16px; }
 @media (orientation: landscape) and (max-height: 600px) { main { max-width: 1000px; } header { padding-bottom: 12px; } h1 { margin: 16px 0 8px; } .viewer { min-height: 160px; } video, #result { max-height: 68svh; } }
