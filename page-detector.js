@@ -1,28 +1,6 @@
 /* Conservative document heuristics, not a semantic book classifier. */
 const PAGE_CONFIG = Object.freeze({ interval: 350, maxSide: 640, stableMs: 1500,
   boundaryTolerance: .012, textureTolerance: 4, minArea: .07, maxCandidates: 10 });
-let cvPromise;
-function loadBookCV() {
-  if (cvPromise) return cvPromise;
-  cvPromise = new Promise((resolve, reject) => {
-    let done = false;
-    const finish = (error, value) => { if (done) return; done = true; clearTimeout(timeout); error ? reject(error) : resolve(value); };
-    const timeout = setTimeout(() => finish(new Error('OpenCV 加载超时，请检查网络后刷新页面。')), 45000);
-    const script = document.createElement('script');
-    script.src = 'https://docs.opencv.org/4.10.0/opencv.js';
-    script.onerror = () => finish(new Error('OpenCV 加载失败，自动检测不可用；仍可手动拍摄原图。'));
-    script.onload = async () => {
-      try {
-        const module = await window.cv;
-        if (module?.Mat) finish(null, module);
-        else if (module) module.onRuntimeInitialized = () => finish(null, module);
-        else finish(new Error('OpenCV 初始化失败。'));
-      } catch (error) { finish(error); }
-    };
-    document.head.append(script);
-  });
-  return cvPromise;
-}
 const pageDistance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
 function orderPage(points) {
   const sorted = [...points].sort((a,b) => a.y-b.y);

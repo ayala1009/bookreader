@@ -9,7 +9,19 @@ const detector = new StabilityDetector($('video'), {
   onStatus: text => { $('stability-status').textContent = $('auto').checked ? text : AUTO_STATUS.off; },
   onStable: pages => $('auto').checked ? takePhoto(true, pages) : false,
   onPages: pages => { drawnPages=pages; drawOverlay(); },
-  onError: error => { $('stability-status').textContent='书页检测不可用，自动拍摄已暂停'; message(error.message, true); }
+  onError: error => { $('stability-status').textContent='书页检测不可用，自动拍摄已暂停'; $('cv-status').textContent=error.message; $('retry-cv').hidden=false; message(error.message, true); }
+});
+window.addEventListener('bookreader:cv-status',event=>{
+  $('cv-status').textContent=event.detail;
+  if(event.detail==='OpenCV 运行时已就绪')$('retry-cv').hidden=true;
+});
+$('retry-cv').addEventListener('click',async()=>{
+  detector.stop();$('retry-cv').disabled=true;
+  try {
+    await detector.engine.ready();$('retry-cv').hidden=true;
+    message('OpenCV 已就绪，可继续检测；相机未开启时请先开启相机。');syncDetection();
+  } catch(error) {$('cv-status').textContent=error.message;message(error.message,true);}
+  finally {$('retry-cv').disabled=false;}
 });
 function drawOverlay() {
   const canvas=$('overlay'), video=$('video'), box=canvas.getBoundingClientRect(), vb=video.getBoundingClientRect();

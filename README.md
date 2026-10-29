@@ -2,7 +2,15 @@
 
 ## 当前版本：自动页面检测（实验性）
 
-以下内容优先于下方早期阶段说明。当前版本使用 OpenCV.js 4.10.0，从 `https://docs.opencv.org/4.10.0/opencv.js` 按需加载；首次开启相机后显示检测边界，自动拍摄仍默认关闭。相机运行且页面可见时，每次检测结束至少等待 350ms 后再检测，最长边缩至 640 像素。只使用真实摄像头，不提供手动框选或模拟检测结果。
+以下内容优先于下方早期阶段说明。当前版本使用项目内托管的 OpenCV.js 4.10.0，位置为 `vendor/opencv/opencv.js`，WASM 内嵌，无额外 WASM 文件。旧的官方文档地址实测返回 HTTP 404，已移除运行时外部依赖。首次开启相机后显示检测边界，自动拍摄仍默认关闭。相机运行且页面可见时，每次检测结束至少等待 350ms 后再检测，最长边缩至 640 像素。只使用真实摄像头，不提供手动框选或模拟检测结果。
+
+### 本地依赖加载修复
+
+新增 `opencv-loader.js`：以加载器自身 URL 为基准解析 `vendor/opencv/opencv.js`，适配 GitHub Pages `/bookreader/` 子路径，不使用站点根路径。下载阶段检查 HTTP 状态和返回内容，90 秒超时；初始化阶段等待运行时回调/Promise/旧式 thenable，并实际创建和释放 Mat，60 秒超时。此固定版本的 `.then()` 返回自身，不能直接 `await window.cv`；就绪后移除这一旧式钩子再交给原生 Promise。失败会显示具体阶段及原因，并提供“重试加载”；失败的 Promise 会被清除以允许重试。下载后的脚本通过 Blob URL 执行，GitHub Pages 默认配置支持；如额外配置 CSP，需要允许 `blob:` 脚本和 WebAssembly。
+
+此次需上传：`index.html`、`app.js`、`page-detector.js`、新增 `opencv-loader.js`，以及整个 `vendor/opencv/`（opencv.js、LICENSE、package.json、README.md）。同时更新本 README。其余已有网页文件继续保留。新增开发测试 `tests/opencv-loader.test.cjs`，无需部署测试文件夹。
+
+检查：旧外部地址 HTTP 404；固定版本下载成功，包内 WASM 已确认内嵌；Node 中创建 Mat 通过；模拟浏览器环境用真实发布文件验证 `/bookreader/` 相对 URL、HTTP 404 后重试、真实 WASM 初始化、旧 thenable 处理及重复加载复用。以上不是 Safari 真机测试。iPhone 仍需验证 GitHub Pages 首次下载、弱网/断网提示、重试按钮、WASM 初始化与内存、拍照及自动检测恢复。浏览器不会在检测加载失败时自动拍任意静止画面。
 
 检测依据：Canny 边缘及闭运算提取凸四边形，检查面积、长宽比例和完整边界；透视归一化后检查多行小尺度暗纹理。宽幅候选还必须存在贯穿大部分高度、对两侧有对比的中缝线，才生成左右候选；两页分别通过纹理检查才输出。独立单页候选不强行拆分，单页标注“单页”；两页标注“左页”“右页”。这里的“有效”仅指通过规则，并不代表语义上已经证明是书本。
 
