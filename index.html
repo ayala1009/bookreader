@@ -7,8 +7,10 @@
   <title>BookReader · 书页拍摄</title>
   <link rel="stylesheet" href="styles.css">
   <script src="camera.js" defer></script>
-  <script src="stability.js?v=status-20261029-2" defer></script>
-  <script src="app.js?v=status-20261029-2" defer></script>
+  <script src="page-detector.js?v=pages-1" defer></script>
+  <script src="page-output.js?v=pages-1" defer></script>
+  <script src="stability.js?v=pages-1" defer></script>
+  <script src="app.js?v=pages-1" defer></script>
 </head>
 <body>
   <main>
@@ -19,13 +21,13 @@
       <div class="viewer">
         <video id="video" autoplay muted playsinline aria-label="实时摄像头画面" hidden></video>
         <div id="placeholder"><span class="book-icon" aria-hidden="true">▤</span><h2>准备好你的书页</h2><p>开启相机后，这里将显示实时画面</p></div>
-        <img id="result" alt="刚刚拍摄的完整书页画面" hidden>
+        <canvas id="overlay" aria-label="检测到的页面边界"></canvas>
       </div>
       <div class="details"><span id="phase">相机未开启</span><output id="resolution">实际分辨率：—</output></div>
       <p id="message" role="status" aria-live="polite">照片仅保留在当前页面，不会自动上传。</p>
       <label class="auto-control"><input id="auto" type="checkbox"> 自动拍摄</label>
       <p id="stability-status" role="status">自动拍摄已关闭</p>
-      <p class="hint">画面稳定约 1.5 秒后自动拍摄，同一静止画面只拍一次</p>
+      <p class="hint">确认页面边界与纹理并稳定约 1.5 秒后自动拍摄。传统视觉可能误判印刷物，不识别手部或翻页；透视校正不解决弯曲书页。</p>
       <div class="actions">
         <button id="start" class="primary">开启相机</button>
         <button id="capture" class="primary" hidden disabled>拍摄书页</button>
@@ -34,6 +36,7 @@
         <a id="download" class="button primary" hidden download>下载图片</a>
       </div>
       <img id="result" alt="最近拍摄的完整画面" hidden>
+      <div id="page-results"></div>
     </section>
     <footer><span>完整画面 · 原始视频分辨率</span><span>支持竖屏 / 横屏</span></footer>
     <p class="hint">iPhone 请使用 Safari 打开 HTTPS 页面。下载后可在 Safari 下载列表或“文件”App 中查看；也可长按照片保存。</p>

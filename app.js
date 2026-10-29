@@ -3,14 +3,33 @@ const camera = new BookCamera($('video'));
 let state = 'idle';
 let operation = 0;
 let photoURL = null;
+let pageURLs = [];
+let drawnPages = [];
 const detector = new StabilityDetector($('video'), {
-  onStatus: text => { $('stability-status').textContent = text; },
-  onStable: () => takePhoto(true),
-  onError: error => { message('稳定检测失败：' + error.message, true); }
+  onStatus: text => { $('stability-status').textContent = $('auto').checked ? text : AUTO_STATUS.off; },
+  onStable: pages => $('auto').checked ? takePhoto(true, pages) : false,
+  onPages: pages => { drawnPages=pages; drawOverlay(); },
+  onError: error => { $('stability-status').textContent='书页检测不可用，自动拍摄已暂停'; message(error.message, true); }
 });
+function drawOverlay() {
+  const canvas=$('overlay'), video=$('video'), box=canvas.getBoundingClientRect(), vb=video.getBoundingClientRect();
+  canvas.width=Math.round(box.width);canvas.height=Math.round(box.height);
+  const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(video.hidden||!video.videoWidth)return;
+  const scale=Math.min(vb.width/video.videoWidth,vb.height/video.videoHeight);
+  const width=video.videoWidth*scale,height=video.videoHeight*scale;
+  const ox=vb.left-box.left+(vb.width-width)/2,oy=vb.top-box.top+(vb.height-height)/2;
+  ctx.strokeStyle='#b5ff91';ctx.fillStyle='#b5ff91';ctx.lineWidth=3;ctx.font='bold 16px sans-serif';
+  for(const page of drawnPages) {
+    ctx.beginPath();page.points.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](ox+p.x*width,oy+p.y*height));ctx.closePath();ctx.stroke();
+    ctx.fillText(page.label,ox+page.points[0].x*width+6,oy+page.points[0].y*height+22);
+  }
+}
+new ResizeObserver(drawOverlay).observe($('video'));
+window.addEventListener('resize',drawOverlay);
 function syncDetection() {
   detector.stop();
-  if ($('auto').checked && state === 'live' && !document.hidden) detector.start();
+  if (state === 'live' && !document.hidden) detector.start();
   else updateInactiveStatus();
 }
 function updateInactiveStatus() {
@@ -39,6 +58,8 @@ function render(next) {
   if (['idle', 'starting'].includes(next)) $('resolution').textContent = '实际分辨率：—';
 }
 function clearPhoto() {
+  pageURLs.forEach(url=>URL.revokeObjectURL(url));pageURLs=[];
+  $('page-results').replaceChildren();
   $('result').removeAttribute('src');
   $('download').removeAttribute('href');
   if (photoURL) URL.revokeObjectURL(photoURL);
@@ -97,30 +118,62 @@ $('retake').addEventListener('click', start);
 $('stop').addEventListener('click', () => stop());
 $('video').addEventListener('resize', updateResolution);
 $('capture').addEventListener('click', () => takePhoto(false));
-async function takePhoto(automatic = false) {
+async function takePhoto(automatic = false, detectedPages = []) {
   if (state !== 'live') return;
+  const generation=detector.generation;
+  if(automatic) {
+    // Validate the current frame again before capturing, rather than trusting an old overlay.
+    const current=detector.engine.detect($('video'));
+    const delta=PageStabilityGate.delta(current,detectedPages);
+    if(!current.length||delta.boundary>PAGE_CONFIG.boundaryTolerance||delta.texture>PAGE_CONFIG.textureTolerance) {
+      detector.gate.since=null;detector.gate.previous=null;
+      $('stability-status').textContent=AUTO_STATUS.invalid;return false;
+    }
+    detectedPages=current;
+  } else if(detector.engine.cv) {
+    try {detectedPages=detector.engine.detect($('video'));}
+    catch(error) {message('页面检测失败，将只保存手动拍摄原图：'+error.message,true);detectedPages=[];}
+  }
   const token = ++operation;
   if (!automatic) detector.stop();
   render('capturing');
   try {
     const photo = await camera.capture();
     if (token !== operation) return;
+    if(automatic && generation!==detector.generation) {render('live');return false;}
+    const pages=detectedPages.length ? await exportBookPages(photo,detectedPages,detector.engine.cv) : [];
+    if(token!==operation)return false;
+    if(automatic&&generation!==detector.generation){render('live');return false;}
     clearPhoto();
     photoURL = URL.createObjectURL(photo.blob);
     $('result').src = $('download').href = photoURL;
     $('download').download = `book-page-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
+    const metadata={version:1,coordinateSpace:'original-image-pixels',pointOrder:'TL,TR,BR,BL',matrixDirection:'original-to-page',
+      original:{width:photo.width,height:photo.height},pages:pages.map(({blob,...data})=>data),curvedSurfaceCorrected:false};
+    const addLink=(blob,label,name,parent)=>{
+      const url=URL.createObjectURL(blob);pageURLs.push(url);
+      const link=document.createElement('a');link.className='button secondary';link.href=url;link.download=name;link.textContent=label;parent.append(link);return url;
+    };
+    for(const [i,page] of pages.entries()) {
+      const section=document.createElement('section'),title=document.createElement('h2');title.textContent=page.label;
+      const img=document.createElement('img');img.alt=page.label+'透视校正结果';section.append(title,img);
+      img.src=addLink(page.blob,'下载'+page.label,`page-${i+1}.jpg`,section);$('page-results').append(section);
+    }
+    addLink(new Blob([JSON.stringify(metadata,null,2)],{type:'application/json'}),'下载坐标与转换矩阵','book-pages.json',$('page-results'));
     if (!automatic) camera.stop();
     render(automatic ? 'live' : 'result');
     if (!automatic) updateInactiveStatus();
     $('resolution').textContent = `照片：${photo.width} × ${photo.height} px`;
-    message('完整画面已保存到预览，可下载或重新拍摄。');
+    message(pages.length?'原图及独立页面已保存，可分别下载。透视校正不包含曲面校正。':'未确认书页，仅保存手动拍摄原图。');
     // Integration point: event.detail = { blob, width, height }. No upload is performed.
-    window.dispatchEvent(new CustomEvent('bookreader:captured', { detail: photo }));
+    window.dispatchEvent(new CustomEvent('bookreader:captured', { detail: {...photo,pages,metadata} }));
+    return true;
   } catch (error) {
     if (token !== operation) return;
     render('live');
     message(explain(error), true);
     if (!automatic) syncDetection();
+    return false;
   }
 }
 document.addEventListener('visibilitychange', () => {

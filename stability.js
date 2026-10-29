@@ -1,82 +1,56 @@
-// Shared UI text for every automatic-capture state.
-const AUTO_STATUS = Object.freeze({
-  off: '自动拍摄已关闭',
-  idle: '请先开启相机',
-  moving: '画面移动中',
-  waiting: '等待画面稳定',
-  captured: '已拍摄，请移动或翻页'
-});
-window.AUTO_STATUS = AUTO_STATUS;
-// All tuning parameters live here. Differences are mean grayscale levels (0–255).
-const STABILITY_CONFIG = Object.freeze({ sampleMs: 200, width: 160, height: 120,
-  stableMs: 1500, stableThreshold: 3, movementThreshold: 12, maxGapMs: 800 });
-
+const AUTO_STATUS=Object.freeze({off:'自动拍摄已关闭',idle:'请先开启相机',moving:'画面移动中',waiting:'等待画面稳定',captured:'已拍摄，请移动或翻页',invalid:'未确认书页，请调整位置'});
+window.AUTO_STATUS=AUTO_STATUS;
+class PageStabilityGate {
+  constructor(config=PAGE_CONFIG) {this.config=config;this.reset();}
+  reset() {this.previous=null;this.anchor=null;this.since=null;this.last=null;this.captured=null;}
+  static delta(a,b) {
+    if(!a||!b||a.length!==b.length) return {boundary:Infinity,texture:Infinity};
+    let boundary=0,sum=0,n=0;
+    a.forEach((p,i)=>{p.points.forEach((v,j)=>{boundary=Math.max(boundary,pageDistance(v,b[i].points[j]));});
+      p.signature.forEach((v,j)=>{sum+=Math.abs(v-b[i].signature[j]);n++;});});
+    return {boundary,texture:sum/Math.max(1,n)};
+  }
+  update(pages,now) {
+    if(!pages.length) {this.previous=this.anchor=null;this.since=null;this.last=now;return {status:AUTO_STATUS.invalid};}
+    const gap=this.last===null||now-this.last>this.config.interval*3;
+    this.last=now;
+    const same=d=>d.boundary<=this.config.boundaryTolerance&&d.texture<=this.config.textureTolerance;
+    if(this.captured&&same(PageStabilityGate.delta(pages,this.captured))) {
+      this.previous=pages;this.anchor=null;this.since=null;return {status:AUTO_STATUS.captured};
+    }
+    const stable=!gap&&same(PageStabilityGate.delta(pages,this.previous))&&(!this.anchor||same(PageStabilityGate.delta(pages,this.anchor)));
+    this.previous=pages;
+    if(!stable) {this.anchor=pages;this.since=now;return {status:AUTO_STATUS.moving};}
+    this.since??=now;
+    return {status:AUTO_STATUS.waiting,shoot:now-this.since>=this.config.stableMs};
+  }
+  commit(pages) {this.captured=pages;this.since=null;this.anchor=null;}
+}
 class StabilityDetector {
-  constructor(video, { onStatus, onStable, onError = () => {}, config = {} }) {
-    Object.assign(this, { video, onStatus, onStable, onError });
-    this.config = { ...STABILITY_CONFIG, ...config };
-    this.canvas = document.createElement('canvas');
-    this.canvas.width = this.config.width;
-    this.canvas.height = this.config.height;
-    this.context = this.canvas.getContext('2d', { willReadFrequently: true });
-    this.generation = 0;
+  constructor(video,{onStatus,onStable,onError,onPages=()=>{}}) {
+    Object.assign(this,{video,onStatus,onStable,onError,onPages});
+    this.engine=new BookPageDetector();this.gate=new PageStabilityGate();this.generation=0;this.pages=[];
   }
   start() {
-    this.stop();
-    const generation = this.generation;
-    this.onStatus(AUTO_STATUS.waiting);
-    const tick = async () => {
-      if (generation !== this.generation) return;
+    this.stop();const generation=this.generation;
+    this.onStatus('正在加载书页检测…');
+    const tick=async()=>{
+      if(generation!==this.generation) return;
       try {
-        if (this.video.readyState < 2 || !this.video.videoWidth) {
-          this.previous = null; this.since = null;
-        } else {
-          const now = performance.now();
-          const size = `${this.video.videoWidth}x${this.video.videoHeight}`;
-          if (size !== this.size || now - this.last > this.config.maxGapMs) {
-            this.previous = null; this.since = null;
-          }
-          this.size = size; this.last = now;
-          this.context.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-          const rgba = this.context.getImageData(0, 0, this.canvas.width, this.canvas.height).data;
-          const gray = new Uint8Array(rgba.length / 4);
-          for (let i = 0; i < gray.length; i++) gray[i] = .299 * rgba[i*4] + .587 * rgba[i*4+1] + .114 * rgba[i*4+2];
-          if (this.previous) {
-            const change = StabilityDetector.difference(gray, this.previous);
-            if (this.locked) {
-              // Compare with captured scene too, so gradual movement can rearm.
-              if (change >= this.config.movementThreshold || (this.reference && StabilityDetector.difference(gray, this.reference) >= this.config.movementThreshold)) {
-                this.locked = false; this.since = null; this.onStatus(AUTO_STATUS.moving);
-              } else this.onStatus(AUTO_STATUS.captured);
-            } else if (change > this.config.stableThreshold) {
-              this.since = null; this.onStatus(AUTO_STATUS.moving);
-            } else {
-              this.since ??= now;
-              this.onStatus(AUTO_STATUS.waiting);
-              if (now - this.since >= this.config.stableMs) {
-                this.locked = true; this.reference = gray.slice();
-                this.onStatus(AUTO_STATUS.captured);
-                await this.onStable();
-              }
-            }
-          }
-          this.previous = gray;
+        const pages=this.video.readyState>=2?this.engine.detect(this.video):[];
+        this.pages=pages;this.onPages(pages);
+        const result=this.gate.update(pages,performance.now());this.onStatus(result.status);
+        if(result.shoot) {
+          const ok=await this.onStable(pages);
+          if(generation!==this.generation)return;
+          if(ok) {this.gate.commit(pages);this.onStatus(AUTO_STATUS.captured);}
         }
-      } catch (error) { this.stop(); this.onError(error); return; }
-      if (generation === this.generation) this.timer = setTimeout(tick, this.config.sampleMs);
+      } catch(error) {this.stop();this.onError(error);return;}
+      if(generation===this.generation)this.timer=setTimeout(tick,PAGE_CONFIG.interval);
     };
-    this.timer = setTimeout(tick, this.config.sampleMs);
+    this.engine.ready().then(()=>{if(generation===this.generation)tick();}).catch(error=>{if(generation===this.generation){this.stop();this.onError(error);}});
   }
-  stop() {
-    this.generation++;
-    clearTimeout(this.timer);
-    this.previous = this.reference = null;
-    this.since = null; this.last = 0; this.size = null; this.locked = false;
-  }
-  static difference(a, b) {
-    let sum = 0;
-    for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
-    return sum / a.length;
-  }
+  stop() {this.generation++;clearTimeout(this.timer);this.pages=[];this.gate.reset();this.onPages([]);}
 }
-window.StabilityDetector = StabilityDetector;
+window.StabilityDetector=StabilityDetector;
+window.PageStabilityGate=PageStabilityGate;
