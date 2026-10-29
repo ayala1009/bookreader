@@ -6,12 +6,12 @@ let photoURL = null;
 const detector = new StabilityDetector($('video'), {
   onStatus: text => { $('stability-status').textContent = text; },
   onStable: () => takePhoto(true),
-  onError: error => { message('???????' + error.message, true); }
+  onError: error => { message('稳定检测失败：' + error.message, true); }
 });
 function syncDetection() {
   detector.stop();
   if ($('auto').checked && state === 'live' && !document.hidden) detector.start();
-  else $('stability-status').textContent = $('auto').checked ? '??????' : '???????';
+  else $('stability-status').textContent = $('auto').checked ? '等待开启相机' : '自动拍摄已关闭';
 }
 $('auto').addEventListener('change', syncDetection);
 
